@@ -1,0 +1,5 @@
+DerivedData/
+**/xcuserdata/
+**/.DS_Store
+*.swp
+

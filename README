@@ -1,0 +1,5 @@
+macOS FSEventStream investigator program used to dive deep into macOS File System Events API
+
+TODO:
+Use makefile instead of XCode shit
+
