@@ -23,8 +23,9 @@
 
 /**
  * Check if `descendant' a descendant of `ancestor'(assume they're normalized)
- * @ancestor    needle
- * @descendant  haystack
+ * @an          needle
+ * @de          haystack
+ * @cs          if case sensitive
  * XXX: if ancestor and descendant equals  we'll return YES
  *
  * see: https://gist.github.com/boredzo/4325317

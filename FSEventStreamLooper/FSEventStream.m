@@ -5,7 +5,6 @@
 #import "FSEventStream.h"
 #import "LibUtils.h"
 
-
 #include <sys/stat.h>
 #include <sys/mount.h>
 
@@ -180,13 +179,28 @@
     flags |= kFSEventStreamCreateFlagWatchRoot;
     flags |= kFSEventStreamCreateFlagNoDefer;
     /*
-     * file-level events should both be set for history/realtime events
+     * file-level events can be set for history events
      *  o.w. in history replay  the event flags will very likely to be 0
+     *  (it indicates the history fsevents has been coalesced hierarchically
+     *  thus a precise event flag is impossible)
+     * in such case  you must specify recursive-scan manually
+     *
+     * see: <FSEvents/FSEvents.h>#kFSEventStreamEventFlagNone
+     *
+     * NOTE: the same rule applys to realtime fsevents
      */
     flags |= kFSEventStreamCreateFlagFileEvents;
 
     if (isHistory) {
 #if 0
+        /*
+         * if the history fsevents is dir-level notification
+         *  (e.g. without kFSEventStreamCreateFlagFileEvents flag)
+         *  the event path in the callback will ends with a slash
+         *  example: /foo/bar/
+         *
+         * NOTE: the same rule applys to realtime fsevents
+         */
         flags &= ~kFSEventStreamCreateFlagFileEvents;
 #endif
         since = self.sinceWhen;
@@ -483,6 +497,7 @@ static BOOL pack_rt_fsevent_data(
     CheckNotNull(data);
 
     if (self.historyDone) {
+        /* History replay done  we can play rt events directly */
         LOG_INF("%@", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
     } else {
         /* Data from previously packed by pack_rt_fsevent_data() */
@@ -490,7 +505,7 @@ static BOOL pack_rt_fsevent_data(
     }
 }
 
-#define RT_COLLAPSE_WSZ  10
+#define RT_COALESCE_FSZ  10     /* Realtime coalesce frame size */
 
 static void realtime_events_callback(
         ConstFSEventStreamRef streamRef,
@@ -507,7 +522,7 @@ static void realtime_events_callback(
 
     /* Realtime fsevents will be collapsed for every 10 contiguous events */
     for (i = 0; i < numEvents; i++) {
-        if (i % RT_COLLAPSE_WSZ == 0) {
+        if (i % RT_COALESCE_FSZ == 0) {
             data = [NSMutableData dataWithCapacity:4096];
             CCheckNotNull(data);
             [data appendBytes:rt_evts_beg_cmd length:QSTRLEN(rt_evts_beg_cmd)];
@@ -516,7 +531,7 @@ static void realtime_events_callback(
         if (!pack_rt_fsevent_data(data, stream.devMountPrefix, eventIds[i], eventFlags[i], paths[i]))
             continue;
 
-        if (i % RT_COLLAPSE_WSZ == RT_COLLAPSE_WSZ-1) {
+        if (i % RT_COALESCE_FSZ == RT_COALESCE_FSZ-1) {
             [data appendBytes:rt_evts_end_cmd length:QSTRLEN(rt_evts_end_cmd)];
             [stream addRealtimeEvent:data];
         }
@@ -524,7 +539,7 @@ static void realtime_events_callback(
         [LibUtils mdelay:50];
     }
 
-    if (i % RT_COLLAPSE_WSZ != 0) {
+    if (i % RT_COALESCE_FSZ != 0) {
         [data appendBytes:rt_evts_end_cmd length:QSTRLEN(rt_evts_end_cmd)];
         [stream addRealtimeEvent:data];
     }
