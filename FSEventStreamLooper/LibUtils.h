@@ -40,6 +40,7 @@
 @interface LibUtils : NSObject
 
 + (void)mdelay:(long)ms;
++ (BOOL)isAncestorOf:(NSString *)an descendant:(NSString *)de caseSensitive:(BOOL)cs;
 
 @end
 

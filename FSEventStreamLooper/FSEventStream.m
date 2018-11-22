@@ -137,10 +137,11 @@
     LOG_INF("device %#x  UUID: %@", self.devno, uuidStr);
 
     /*
-     * Q: will the event id be zero if time is small enough?
-     * A: yes  it's possible when you pass time zero
+     * Q: will the event id be zero?
+     * A: it's possible when if no event by given time
      */
-    FSEventStreamEventId eid = FSEventsGetLastEventIdForDeviceBeforeTime(self.devno, (CFAbsoluteTime) self.checkpoint);
+    FSEventStreamEventId eid =
+        FSEventsGetLastEventIdForDeviceBeforeTime(self.devno, (CFAbsoluteTime) self.checkpoint);
 
     self.sinceWhen = eid;
     self.historyEventsMap = [NSMutableDictionary dictionary];
@@ -269,7 +270,6 @@
 - (void)stopFSEventStreams {
     [self stopHistoryFSEventStream];
     [self stopRealtimeFSEventStream];
-    LOG_DBG("realtime/history fsevents stopped");
 }
 
 - (void)addHistoryEvent:(NSString *)path eid:(FSEventStreamEventId)eid flags:(FSEventStreamEventFlags)flags {
@@ -292,23 +292,6 @@ static const char hi_evts_beg_cmd[] = "history_fsevents\n";
  * We can use a single linefeed as a generic command terminator  just as HTTP
  */
 static const char hi_evts_end_cmd[] = "end\n";
-
-/**
- * Check if `descendant' a descendant of `ancestor'
- * @ancestor    needle
- * @descendant  haystack
- * both of above two arguments should ends with a '/'
- *
- * TODO: should handle case with/without trailing slash
- */
-- (BOOL)isAncestorOf:(NSString *)ancestor descendant:(NSString *)descendant caseSensitive:(BOOL)caseSensitive {
-    CheckNotNull(ancestor);
-    CheckNotNull(descendant);
-
-    if (ancestor.length > descendant.length) return NO;
-    NSStringCompareOptions mask = caseSensitive ? 0 : NSCaseInsensitiveSearch;
-    return [ancestor compare:descendant options:mask range:NSMakeRange(0, ancestor.length)] == NSOrderedSame;
-}
 
 - (void)historyEventsEnded {
     [self stopHistoryFSEventStream];
@@ -340,8 +323,8 @@ static const char hi_evts_end_cmd[] = "end\n";
     [data appendBytes:hi_evts_beg_cmd length:QSTRLEN(hi_evts_beg_cmd)];
     for (NSString *path in sorted) {
         if (prevPath != nil && mustScanSubDirs) {
-            if ([self isAncestorOf:prevPath descendant:path caseSensitive:caseSensitive]) {
-                LOG_DBG("skip %@ as it'll recursively scanned by its ancestor", path);
+            if ([LibUtils isAncestorOf:prevPath descendant:path caseSensitive:caseSensitive]) {
+                LOG_DBG("skip %@ as it'll be scanned by its ancestor", path);
                 continue;
             }
         }
@@ -389,6 +372,7 @@ static const char hi_evts_end_cmd[] = "end\n";
      */
     LOG_INF("%@", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
 
+    if (self.pendingRealtimeEvents.count != 0) LOG_DBG("push pending rt events");
     for (NSData *data in self.pendingRealtimeEvents) {
         LOG_INF("%@", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
     }
@@ -397,7 +381,8 @@ static const char hi_evts_end_cmd[] = "end\n";
     self.historyEventsMap = nil;
     self.historyDone = YES;
 
-    LOG_INF("%@", self);
+    LOG_DBG("%@", self);
+    LOG_INF("hi events ended");
 }
 
 static void history_events_callback(

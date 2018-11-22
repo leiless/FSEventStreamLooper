@@ -8,7 +8,6 @@
 
 #include <libgen.h>
 #include <unistd.h>
-#include <sys/_select.h>
 
 static __dead2 void usage(int argc, char **argv)
 {
