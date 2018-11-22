@@ -65,6 +65,10 @@
     return self;
 }
 
+- (void)dealloc {
+    [self stopFSEventStreams];
+}
+
 - (NSString *)description {
     return [NSString stringWithFormat:@"[%@ path: %@ cp: %lld dev: %#x mnt: %@ eid: %#llx hi: %p(%d) rt: %p]",
             self.className, self.path, self.checkpoint, self.devno, self.devMountAt, self.sinceWhen,
@@ -226,6 +230,7 @@
 
     /* Create real-time fsevent stream to avoid event lost */
     if (![self createFSEventStream:queue isHistory:NO]) return NO;
+    LOG_DBG("realtime fsevents %p created", self.realtimeStreamRef);
 
     if ([self needsHistoryEvents]) {
         if (![self createFSEventStream:queue isHistory:YES]) {
@@ -235,6 +240,8 @@
             });
             return NO;
         }
+
+        LOG_DBG("history  fsevents %p created", self.historyStreamRef);
 
         /*
          * When history fsevent registered successfully
