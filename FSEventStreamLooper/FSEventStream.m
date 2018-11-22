@@ -48,7 +48,11 @@
 
     self = [super init];
     CheckNotNull(self);
-    self.path = path;
+
+    char *cpath = realpath([path UTF8String], NULL);
+    self.path = cpath ? [NSString stringWithUTF8String:cpath] : path;
+    free(cpath);
+
     self.checkpoint = checkpoint;
 
     time_t now = time(NULL);
