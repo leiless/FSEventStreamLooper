@@ -15,9 +15,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, strong) NSString *devMountAt;
 @property (nonatomic, readonly, assign) FSEventStreamEventId sinceWhen;
 
-- (nonnull instancetype)init:(NSString *)path checkpoint:(SInt64)checkpoint;
+- (nonnull instancetype)init:(nonnull NSString *)path checkpoint:(SInt64)checkpoint;
 
-- (BOOL)prepare:(dispatch_queue_t)queue;
+- (BOOL)prepare:(nonnull dispatch_queue_t)queue;
 
 - (void)stopHistoryFSEventStream;
 - (void)stopRealtimeFSEventStream;

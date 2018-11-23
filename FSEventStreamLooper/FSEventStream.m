@@ -38,7 +38,7 @@
  *              -1 indicates no checkpoint at all
  *              time format in seconds(i.e. POSIX style time_t)
  */
-- (nonnull instancetype)init:(NSString *)path checkpoint:(SInt64)checkpoint {
+- (nonnull instancetype)init:(nonnull NSString *)path checkpoint:(SInt64)checkpoint {
     CheckNotNull(path);
     if (checkpoint < -1) {
         LOG_WAR("negative checkpoint timestamp %lld  fallback to -1(no checkpoint)", checkpoint);
@@ -166,7 +166,7 @@
     return self.sinceWhen > 0 && self.sinceWhen != kFSEventStreamEventIdSinceNow;
 }
 
-- (BOOL)createFSEventStream:(dispatch_queue_t)queue isHistory:(BOOL)isHistory {
+- (BOOL)createFSEventStream:(nonnull dispatch_queue_t)queue isHistory:(BOOL)isHistory {
     /* relpath won't begin with path separator :. self.devMountAt ends with it */
     NSString *relpath = [self.path substringFromIndex:self.devMountAt.length];
     NSArray *pathsToWatch = @[relpath];
@@ -235,7 +235,7 @@
     return FSEventStreamStart(streamRef);
 }
 
-- (BOOL)prepare:(dispatch_queue_t)queue {
+- (BOOL)prepare:(nonnull dispatch_queue_t)queue {
     CheckNotNull(queue);
 
     LOG_INF("going to prepare device/checkpoint and start fsevents");
@@ -248,6 +248,7 @@
 
     if ([self needsHistoryEvents]) {
         if (![self createFSEventStream:queue isHistory:YES]) {
+            /* Execute in the same queue so rt fsevents won't lost */
             dispatch_async(queue, ^{
                 [self historyEventsEnded];
                 [self stopRealtimeFSEventStream];
@@ -264,6 +265,7 @@
          */
     } else {
         LOG_DBG("skip create history fsevents :. no checkpoint");
+        /* Ditto. */
         dispatch_async(queue, ^{ [self historyEventsEnded]; });
     }
 
@@ -297,7 +299,9 @@
     [self stopRealtimeFSEventStream];
 }
 
-- (void)addHistoryEvent:(NSString *)path eid:(FSEventStreamEventId)eid flags:(FSEventStreamEventFlags)flags {
+- (void)addHistoryEvent:(nonnull NSString *)path eid:(FSEventStreamEventId)eid flags:(FSEventStreamEventFlags)flags {
+    CheckNotNull(path);
+
     NSArray *old = [self.historyEventsMap valueForKey:path];
     NSArray *new = @[@(eid), @(flags)];
     if (old != nil) {
@@ -444,12 +448,12 @@ static void history_events_callback(
 static const char rt_evts_beg_cmd[] = "realtime_fsevents\n";
 static const char rt_evts_end_cmd[] = "end\n";
 
-static BOOL pack_rt_fsevent_data(
-        NSMutableData *output,
-        NSData *mntPrefix,
+static void pack_rt_fsevent_data(
+        NSMutableData * __nonnull output,
+        NSData * __nonnull mntPrefix,
         FSEventStreamEventId eid,
         FSEventStreamEventFlags flags,
-        const char *path)
+        const char * __nonnull path)
 {
     CCheckNotNull(output);
     CCheckNotNull(mntPrefix);
@@ -462,7 +466,7 @@ static BOOL pack_rt_fsevent_data(
     BOOL shouldIgnore = !(isDir || isFile || rootChanged || mustScanSubDirs);
     if (shouldIgnore) {
         LOG_WAR("rt event %#llx ignored  path: %s flags: %#x", eid, path, flags);
-        return NO;
+        return;
     }
 
     /*
@@ -489,11 +493,9 @@ static BOOL pack_rt_fsevent_data(
     [output appendData:mntPrefix];
     [output appendBytes:path length:strlen(path)];
     [output appendBytes:"\n" length:1];
-
-    return YES;
 }
 
-- (void)addRealtimeEvent:(NSData *)data {
+- (void)addRealtimeEvent:(nonnull NSData *)data {
     CheckNotNull(data);
 
     if (self.historyDone) {
@@ -517,8 +519,8 @@ static void realtime_events_callback(
 {
     const char **paths = (typeof(paths)) eventPaths;
     FSEventStream *stream = (__bridge typeof(stream)) clientCallBackInfo;
+    NSMutableData *data;
     size_t i;
-    NSMutableData *data = nil;
 
     /* Realtime fsevents will be collapsed for every 10 contiguous events */
     for (i = 0; i < numEvents; i++) {
@@ -528,8 +530,7 @@ static void realtime_events_callback(
             [data appendBytes:rt_evts_beg_cmd length:QSTRLEN(rt_evts_beg_cmd)];
         }
 
-        if (!pack_rt_fsevent_data(data, stream.devMountPrefix, eventIds[i], eventFlags[i], paths[i]))
-            continue;
+        pack_rt_fsevent_data(data, stream.devMountPrefix, eventIds[i], eventFlags[i], paths[i]);
 
         if (i % RT_COALESCE_FSZ == RT_COALESCE_FSZ-1) {
             [data appendBytes:rt_evts_end_cmd length:QSTRLEN(rt_evts_end_cmd)];
